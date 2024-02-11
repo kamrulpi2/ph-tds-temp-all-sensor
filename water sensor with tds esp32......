@@ -1,0 +1,231 @@
+#if defined(ESP32)
+#include <WiFi.h>
+#elif defined(ESP8266)
+#include <ESP8266WiFi.h>
+#endif
+#include <Firebase_ESP_Client.h>
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+#include <Arduino.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+float waterTemp = 27.00;
+
+namespace pin {
+  const byte tds_sensor = 33; // TDS Sensor (D34 on ESP32)
+  const byte water_level_sensor = 32; // Water Level Sensor (A0 on ESP32, analog pin)
+}
+
+namespace device {
+  float aref = 3.3;
+}
+
+namespace sensor {
+  float ec = 0;
+  unsigned int tds = 0;
+  float ecCalibration = 1;
+  int waterLevel = 0;
+}
+
+#define WIFI_SSID "ROBO TECH VALLEY"
+#define WIFI_PASSWORD "roboninja"
+
+#define API_KEY "AIzaSyAwc9Ht-K8NMbHa-WhA5Ufhs3EVvAAoPkE"
+#define DATABASE_URL "fir-test-1a1f5-default-rtdb.firebaseio.com/"
+
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+bool signupOK = false;
+
+OneWire oneWire(4); // Assuming the DS18B20 is on pin D4
+DallasTemperature sensors(&oneWire);
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(300);
+  }
+  Serial.println();
+  Serial.print("Connected with IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.println();
+
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+  if (Firebase.signUp(&config, &auth, "", "")) {
+    Serial.println("ok");
+    signupOK = true;
+  } else {
+    Serial.printf("%s\n", config.signer.signupError.message.c_str());
+  }
+
+  /* Assign the callback function for the long-running token generation task */
+  config.token_status_callback = tokenStatusCallback;
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+
+  sensors.begin();
+}
+
+void loop() {
+  if (Firebase.ready() && signupOK) {
+    float rawEc = analogRead(pin::tds_sensor) * device::aref / 4095.0; // read the analog value more stable by the median filtering algorithm, and convert to voltage value
+    float temperatureCoefficient = 1.0 + 0.02 * (waterTemp - 25.0);     // temperature compensation formula: fFinalResult(25^C) = fFinalResult(current)/(1.0+0.02*(fTP-25.0));
+
+    sensor::ec = (rawEc / temperatureCoefficient) * sensor::ecCalibration; // temperature and calibration compensation
+    sensor::tds = (133.42 * pow(sensor::ec, 3) - 255.86 * sensor::ec * sensor::ec + 857.39 * sensor::ec) * 0.5; // convert voltage value to TDS value
+
+    Serial.print(F("TDS:"));
+    Serial.println(sensor::tds);
+    Serial.print(F("EC:"));
+    Serial.println(sensor::ec, 2);
+
+    Firebase.RTDB.setFloat(&fbdo, "/users/BUBT/tds", sensor::tds); // Send TDS value to Firebase
+
+    Serial.print("TDS Value = ");
+    Serial.print(sensor::tds);
+    Serial.println(" ppm");
+
+    // Read water level sensor
+    sensor::waterLevel = analogRead(pin::water_level_sensor);
+    int waterLevelPercentage = map(sensor::waterLevel, 0, 4095, 0, 100); // Map the analog read value to a percentage
+
+    Serial.print("Water Level: ");
+    Serial.println(waterLevelPercentage);
+
+    Firebase.RTDB.setInt(&fbdo, "/users/BUBT/waterLevel", waterLevelPercentage);
+
+    delay(3000); // Adjust delay as needed
+  } else {
+    Serial.println("Firebase not ready or signup failed");
+    Serial.println("Reason: " + fbdo.errorReason());
+  }
+
+  Serial.println("______________________________");
+  delay(1000);
+  delay(2000);
+}
+......................esp8266.......for pH and temp........
+#if defined(ESP32)
+  #include <WiFi.h>
+#elif defined(ESP8266)
+  #include <ESP8266WiFi.h>
+#endif
+#include <Firebase_ESP_Client.h>
+
+#include "addons/TokenHelper.h"
+#include "addons/RTDBHelper.h"
+#include <Arduino.h>
+#include <DallasTemperature.h>
+#include <OneWire.h>
+
+#define WIFI_SSID "ROBO TECH VALLEY"
+#define WIFI_PASSWORD "roboninja"
+
+#define API_KEY "AIzaSyAwc9Ht-K8NMbHa-WhA5Ufhs3EVvAAoPkE"
+#define DATABASE_URL "fir-test-1a1f5-default-rtdb.firebaseio.com/"
+
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+bool signupOK = false;
+int on,oN;
+int samples = 10;
+float adc_resolution = 4095.0,  x;
+
+const int oneWireBus = 4;
+OneWire oneWire(oneWireBus);
+DallasTemperature sensors(&oneWire);
+
+float ph(float voltage) {
+  return .5+6;
+}
+
+
+void setup() {
+
+  Serial.begin(115200);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(300);
+  }
+  Serial.println();
+  Serial.print("Connected with IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.println();
+
+
+  config.api_key = API_KEY;
+  config.database_url = DATABASE_URL;
+  if (Firebase.signUp(&config, &auth, "", "")) {
+    Serial.println("ok");
+    signupOK = true;
+  } else {
+    Serial.printf("%s\n", config.signer.signupError.message.c_str());
+  }
+
+  /* Assign the callback function for the long running token generation task */
+  config.token_status_callback = tokenStatusCallback;
+
+  Firebase.begin(&config, &auth);
+  Firebase.reconnectWiFi(true);
+
+  sensors.begin();
+}
+
+
+float pH = 0;
+void loop() {
+
+  int measurings = 0;
+  for (int i = 0; i < samples; i++) {
+    measurings += analogRead(0);
+    delay(10);
+  }
+if (Firebase.ready() && signupOK) {
+    Firebase.RTDB.set(&fbdo, "ph", pH);
+
+  float voltage = 5 / adc_resolution * measurings / samples;
+  x = ph(voltage);
+
+  Serial.println("pH=");
+  Serial.print(x);
+  delay(3000);
+
+  // temp part
+  sensors.requestTemperatures();
+  float temperatureC = sensors.getTempCByIndex(0);
+  float temperatureF = sensors.getTempFByIndex(0);
+  Serial.print(temperatureC);
+  Serial.println("ºC");
+  // Serial.print(temperatureF);
+  // Serial.println("ºF");
+  delay(2000);
+
+  Firebase.RTDB.set(&fbdo, "/users/BUBT/ph", x);
+  Firebase.RTDB.set(&fbdo, "/users/BUBT/temperature", temperatureC);
+}
+  
+  if (Firebase.ready() && signupOK) {
+    Firebase.RTDB.set(&fbdo, "/users/BUBT/on", oN);
+    oN += 1;
+    Serial.println(oN);
+
+    }else {
+    Serial.println("Firebase not ready or signup failed");
+    Serial.println("Reason: " + fbdo.errorReason());
+  }
+
+  Serial.println("______________________________");
+  delay(1000);
+
+  delay(2000);
+}
